@@ -330,3 +330,17 @@ def get_logs(
         if len(entries) >= limit:
             break
     return LogResponse(total=len(entries), entries=entries)
+
+
+import uuid as _uuid
+_triggered: dict = {}
+
+def trigger_pipeline(pipeline_id: str):
+    data = get_pipelines()
+    pipe = next((p for p in data.pipelines if p.id == pipeline_id), None)
+    if not pipe:
+        return None
+    trigger_id = f"pipe-{_uuid.uuid4().hex[:6]}"
+    _triggered[trigger_id] = {"pipeline_id": pipeline_id, "triggered_at": _now()}
+    return {"pipeline_id": pipeline_id, "trigger_id": trigger_id,
+            "service": pipe.service, "triggered_at": _now()}

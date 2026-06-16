@@ -161,3 +161,10 @@ class LogEntry(BaseModel):
 class LogResponse(BaseModel):
     total: int
     entries: List[LogEntry]
+
+
+class TriggerResponse(BaseModel):
+    pipeline_id: str
+    status: str
+    message: str
+    triggered_at: str
