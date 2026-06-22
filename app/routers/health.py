@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from datetime import datetime, timezone
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -9,6 +10,7 @@ async def health():
     return {
         "status": "ok",
         "service": "devops-mesh-api",
+        "version": settings.VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
