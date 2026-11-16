@@ -38,9 +38,32 @@ class Settings(BaseSettings):
     # Metrics refresh interval (seconds) used by the dashboard summary payload
     METRICS_TTL: int = 5
 
+    # GitHub Actions: the source of the real CI data behind /api/v1/pipelines
+    GITHUB_TOKEN: str = ""
+    GITHUB_API_URL: str = "https://api.github.com"
+    GITHUB_REPOS: list[str] = [
+        "rintuchowdory/devops-portfolio-microservice",
+        "rintuchowdory/devops-portfolio-website",
+    ]
+    GITHUB_RUNS_PER_REPO: int = 3
+    GITHUB_CACHE_TTL: int = 60
+    GITHUB_TIMEOUT: float = 8.0
+    # auto -> GitHub when a token is configured, otherwise simulated
+    PIPELINES_SOURCE: str = "auto"
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_MAX_LINES: int = 500
+
+    @field_validator("GITHUB_REPOS", mode="before")
+    @classmethod
+    def _split_repos(cls, value: object) -> object:
+        """Accept `owner/a,owner/b` as well as a JSON array."""
+        if isinstance(value, str) and not value.strip().startswith("["):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

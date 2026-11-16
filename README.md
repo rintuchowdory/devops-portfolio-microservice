@@ -13,9 +13,16 @@ delivery path in one repository, from tests to a signed container image.
 - Interactive docs: <https://devops-portfolio-microservice.vercel.app/docs>
 - Prometheus metrics: <https://devops-portfolio-microservice.vercel.app/metrics>
 
-The data is deterministic fake telemetry held in memory (`app/services/store.py`).
-Swap the store for real Prometheus, Kubernetes or database calls and every route
-keeps working.
+Most routes serve deterministic demo telemetry held in memory
+(`app/services/store.py`), clearly marked as such. One route does not:
+`/api/v1/pipelines` reads the **real** workflow runs of this repository and the
+website repository from the GitHub Actions API, so the dashboard reports on the
+pipeline that actually ships the project. The response carries `source`:
+`github` or `simulated`.
+
+```bash
+curl -s https://devops-portfolio-microservice.vercel.app/api/v1/pipelines | jq '.source, .pipelines[0]'
+```
 
 ## Endpoints
 
@@ -28,9 +35,9 @@ keeps working.
 | GET | `/metrics/json` | Same counters as JSON for dashboards |
 | GET | `/api/v1/services` | Service catalogue, filter by `status`, `namespace`, `tag` |
 | GET | `/api/v1/services/{id}` | Single service |
-| GET | `/api/v1/pipelines` | Pipeline runs, filter by `status`, `service` |
+| GET | `/api/v1/pipelines` | Real GitHub Actions runs (`source: github`), filter by `status`, `service` |
 | GET | `/api/v1/pipelines/{id}` | Single pipeline with its stages |
-| POST | `/api/v1/pipelines/{id}/trigger` | Queue a pipeline run, returns `202` |
+| POST | `/api/v1/pipelines/{id}/trigger` | Queues a run in demo mode, returns `202`; `409` for real GitHub runs |
 | GET | `/api/v1/kubernetes` | Namespace, pod and capacity overview |
 | GET | `/api/v1/kubernetes/{id}` | Single namespace |
 | GET | `/api/v1/metrics/summary` | Dashboard headline numbers |
@@ -93,8 +100,31 @@ runs the test suite inside the image.
 | `LOG_LEVEL` | `INFO` | |
 | `ALLOWED_ORIGINS` | localhost + the Pages origin | Comma separated or a JSON array |
 | `METRICS_TTL` | `5` | Refresh interval used by the summary payload |
+| `GITHUB_TOKEN` | empty | Read-only token for the Actions API. Without it `/api/v1/pipelines` falls back to demo data |
+| `GITHUB_REPOS` | both portfolio repos | Comma separated `owner/repo` list to read workflow runs from |
+| `GITHUB_RUNS_PER_REPO` | `3` | How many recent runs each repository contributes |
+| `GITHUB_CACHE_TTL` | `60` | Seconds a collected result is reused, keeps the API well inside the rate limit |
+| `GITHUB_TIMEOUT` | `8` | Per-request timeout towards `api.github.com` |
+| `PIPELINES_SOURCE` | `auto` | `auto`, `github` or `simulated` |
 
 Copy `.env.example` to `.env` for local use. `.env` is git-ignored.
+
+### Real CI data
+
+`app/services/github_ci.py` collects the latest workflow runs per configured
+repository, maps conclusions onto the dashboard vocabulary
+(`success` -> `passed`, `failure` -> `failed`, `in_progress` -> `running`), and
+pulls the job list of the newest runs so each pipeline can show its stages.
+
+Design choices worth noting:
+
+- **Cached, not proxied.** A 60 second TTL means a busy dashboard costs GitHub one
+  request per minute, not one per browser refresh.
+- **Degrades instead of failing.** No token, a rate limit or a broken repository
+  returns the demo store and logs a warning. The site never renders an empty panel.
+- **Honest triggers.** Runs read from GitHub cannot be queued through this API, so
+  `POST /pipelines/{id}/trigger` answers `409` with the command that does work
+  (`git push`, `gh workflow run`) instead of pretending to queue one.
 
 ## CI/CD
 

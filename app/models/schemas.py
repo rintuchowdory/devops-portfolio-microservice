@@ -84,6 +84,8 @@ class Pipeline(BaseModel):
     triggered_at: str
     duration_sec: int | None
     stages: list[PipelineStage]
+    url: str | None = None
+    triggered_at_iso: str | None = None
 
 
 class PipelineListResponse(BaseModel):
@@ -92,6 +94,8 @@ class PipelineListResponse(BaseModel):
     passed: int
     failed: int
     pipelines: list[Pipeline]
+    # "github" when the runs come from the Actions API, "simulated" for the demo store
+    source: str = "simulated"
 
 
 class Pod(BaseModel):
