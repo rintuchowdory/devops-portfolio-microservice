@@ -13,6 +13,9 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # Without this, pydantic-settings tries json.loads() on list fields before
+        # any validator runs, so ALLOWED_ORIGINS=a,b would crash at import time.
+        enable_decoding=False,
     )
 
     APP_NAME: str = "DevOps Mesh API"
