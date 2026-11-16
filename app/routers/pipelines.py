@@ -1,15 +1,15 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+
+from app.models.schemas import Pipeline, PipelineListResponse, StageStatus, TriggerResponse
 from app.services.store import get_pipelines, trigger_pipeline
-from app.models.schemas import PipelineListResponse, Pipeline, StageStatus, TriggerResponse
 
 router = APIRouter()
 
 
 @router.get("/pipelines", response_model=PipelineListResponse, summary="List all pipelines")
 async def list_pipelines(
-    status: Optional[StageStatus] = Query(None),
-    service: Optional[str] = Query(None),
+    status: StageStatus | None = Query(None),
+    service: str | None = Query(None),
 ):
     data = get_pipelines()
     pipes = data.pipelines

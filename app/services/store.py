@@ -3,126 +3,226 @@ Centralized in-memory data store.
 Simulates realistic drift so the dashboard feels live.
 Replace each method body with real DB / Prometheus / K8s API calls in production.
 """
+
 from __future__ import annotations
+
 import random
 import time
-from datetime import datetime, timezone
-from typing import List
+import uuid as _uuid
+from datetime import UTC, datetime, timedelta
+
 from app.models.schemas import (
-    Service, ServiceStats, ServiceStatus, ServiceListResponse,
-    Pipeline, PipelineStage, PipelineListResponse, StageStatus,
-    K8sNamespace, Pod, PodStatus, K8sResponse,
-    LogEntry, LogLevel, LogResponse,
-    DashboardSummary, ServiceMetric, TimeSeriesPoint,
+    DashboardSummary,
+    K8sNamespace,
+    K8sResponse,
+    LogEntry,
+    LogLevel,
+    LogResponse,
+    Pipeline,
+    PipelineListResponse,
+    PipelineStage,
+    Pod,
+    PodStatus,
+    Service,
+    ServiceListResponse,
+    ServiceMetric,
+    ServiceStats,
+    ServiceStatus,
+    StageStatus,
+    TimeSeriesPoint,
 )
+
+_triggered: dict = {}
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%H:%M:%S")
+    return datetime.now(UTC).strftime("%H:%M:%S")
 
 
-def _ts_series(base: float, spread: float, points: int = 10) -> List[TimeSeriesPoint]:
+def _ts_series(base: float, spread: float, points: int = 10) -> list[TimeSeriesPoint]:
+    """Build a short time series ending now.
+
+    Uses timedelta offsets instead of rewriting the minute field, which raised
+    ValueError whenever the current UTC minute was smaller than `points`.
+    """
+    now = datetime.now(UTC).replace(second=0, microsecond=0)
     series = []
     for i in range(points):
-        val = round(max(0.0, base + random.uniform(-spread, spread)), 1)
-        t = datetime.now(timezone.utc).replace(
-            minute=datetime.now(timezone.utc).minute - (points - i)
-        ).strftime("%H:%M")
-        series.append(TimeSeriesPoint(ts=t, value=val))
+        minutes_ago = points - i - 1
+        value = round(max(0.0, base + random.uniform(-spread, spread)), 2)
+        series.append(
+            TimeSeriesPoint(
+                ts=(now - timedelta(minutes=minutes_ago)).strftime("%H:%M"),
+                value=value,
+            )
+        )
     return series
 
 
 # ── SERVICE DATA ──────────────────────────────────────────────────────────────
 
 _SERVICES_BASE = [
-    dict(
-        id="api-gateway", name="api-gateway",
-        description="Edge proxy & rate limiter",
-        stack="Kong 3.4 · Nginx",
-        version="v3.4.1", status=ServiceStatus.UP,
-        req_per_min=2400, uptime=99.98, p50=38, p95=90, p99=140,
-        replicas=3, cpu=24.0, mem=31.0, err=0.01,
-        last_deploy="2h ago", port=8000, namespace="production",
-        tags=["gateway", "proxy", "edge"],
-    ),
-    dict(
-        id="auth-service", name="auth-service",
-        description="JWT · OAuth2 · RBAC",
-        stack="FastAPI · PostgreSQL · Redis",
-        version="v2.1.0", status=ServiceStatus.UP,
-        req_per_min=890, uptime=99.95, p50=62, p95=120, p99=200,
-        replicas=2, cpu=45.0, mem=52.0, err=0.05,
-        last_deploy="4h ago", port=8001, namespace="production",
-        tags=["auth", "security", "jwt"],
-    ),
-    dict(
-        id="payment-svc", name="payment-svc",
-        description="Stripe gateway · billing",
-        stack="FastAPI · Redis · PostgreSQL",
-        version="v1.8.3", status=ServiceStatus.DEGRADED,
-        req_per_min=340, uptime=97.4, p50=210, p95=480, p99=900,
-        replicas=2, cpu=71.0, mem=91.0, err=2.4,
-        last_deploy="6h ago", port=8002, namespace="production",
-        tags=["payment", "billing", "stripe"],
-    ),
-    dict(
-        id="user-service", name="user-service",
-        description="User profiles · preferences",
-        stack="FastAPI · PostgreSQL",
-        version="v3.0.2", status=ServiceStatus.UP,
-        req_per_min=620, uptime=99.9, p50=55, p95=110, p99=180,
-        replicas=2, cpu=38.0, mem=44.0, err=0.02,
-        last_deploy="1d ago", port=8003, namespace="production",
-        tags=["users", "profiles"],
-    ),
-    dict(
-        id="notification-svc", name="notification-svc",
-        description="Email · SMS · Webhooks",
-        stack="FastAPI · RabbitMQ · SMTP",
-        version="v1.4.0", status=ServiceStatus.UP,
-        req_per_min=180, uptime=99.7, p50=88, p95=200, p99=350,
-        replicas=1, cpu=18.0, mem=26.0, err=0.1,
-        last_deploy="3d ago", port=8004, namespace="production",
-        tags=["notifications", "email", "messaging"],
-    ),
-    dict(
-        id="inventory-svc", name="inventory-svc",
-        description="Stock · SKU management",
-        stack="FastAPI · MongoDB",
-        version="v2.2.1", status=ServiceStatus.UP,
-        req_per_min=450, uptime=99.85, p50=72, p95=145, p99=220,
-        replicas=2, cpu=52.0, mem=48.0, err=0.03,
-        last_deploy="12h ago", port=8005, namespace="production",
-        tags=["inventory", "stock", "mongodb"],
-    ),
+    {
+        "id": "api-gateway",
+        "name": "api-gateway",
+        "description": "Edge proxy & rate limiter",
+        "stack": "Kong 3.4 · Nginx",
+        "version": "v3.4.1",
+        "status": ServiceStatus.UP,
+        "req_per_min": 2400,
+        "uptime": 99.98,
+        "p50": 38,
+        "p95": 90,
+        "p99": 140,
+        "replicas": 3,
+        "cpu": 24.0,
+        "mem": 31.0,
+        "err": 0.01,
+        "last_deploy": "2h ago",
+        "port": 8000,
+        "namespace": "production",
+        "tags": ["gateway", "proxy", "edge"],
+    },
+    {
+        "id": "auth-service",
+        "name": "auth-service",
+        "description": "JWT · OAuth2 · RBAC",
+        "stack": "FastAPI · PostgreSQL · Redis",
+        "version": "v2.1.0",
+        "status": ServiceStatus.UP,
+        "req_per_min": 890,
+        "uptime": 99.95,
+        "p50": 62,
+        "p95": 120,
+        "p99": 200,
+        "replicas": 2,
+        "cpu": 45.0,
+        "mem": 52.0,
+        "err": 0.05,
+        "last_deploy": "4h ago",
+        "port": 8001,
+        "namespace": "production",
+        "tags": ["auth", "security", "jwt"],
+    },
+    {
+        "id": "payment-svc",
+        "name": "payment-svc",
+        "description": "Stripe gateway · billing",
+        "stack": "FastAPI · Redis · PostgreSQL",
+        "version": "v1.8.3",
+        "status": ServiceStatus.DEGRADED,
+        "req_per_min": 340,
+        "uptime": 97.4,
+        "p50": 210,
+        "p95": 480,
+        "p99": 900,
+        "replicas": 2,
+        "cpu": 71.0,
+        "mem": 91.0,
+        "err": 2.4,
+        "last_deploy": "6h ago",
+        "port": 8002,
+        "namespace": "production",
+        "tags": ["payment", "billing", "stripe"],
+    },
+    {
+        "id": "user-service",
+        "name": "user-service",
+        "description": "User profiles · preferences",
+        "stack": "FastAPI · PostgreSQL",
+        "version": "v3.0.2",
+        "status": ServiceStatus.UP,
+        "req_per_min": 620,
+        "uptime": 99.9,
+        "p50": 55,
+        "p95": 110,
+        "p99": 180,
+        "replicas": 2,
+        "cpu": 38.0,
+        "mem": 44.0,
+        "err": 0.02,
+        "last_deploy": "1d ago",
+        "port": 8003,
+        "namespace": "production",
+        "tags": ["users", "profiles"],
+    },
+    {
+        "id": "notification-svc",
+        "name": "notification-svc",
+        "description": "Email · SMS · Webhooks",
+        "stack": "FastAPI · RabbitMQ · SMTP",
+        "version": "v1.4.0",
+        "status": ServiceStatus.UP,
+        "req_per_min": 180,
+        "uptime": 99.7,
+        "p50": 88,
+        "p95": 200,
+        "p99": 350,
+        "replicas": 1,
+        "cpu": 18.0,
+        "mem": 26.0,
+        "err": 0.1,
+        "last_deploy": "3d ago",
+        "port": 8004,
+        "namespace": "production",
+        "tags": ["notifications", "email", "messaging"],
+    },
+    {
+        "id": "inventory-svc",
+        "name": "inventory-svc",
+        "description": "Stock · SKU management",
+        "stack": "FastAPI · MongoDB",
+        "version": "v2.2.1",
+        "status": ServiceStatus.UP,
+        "req_per_min": 450,
+        "uptime": 99.85,
+        "p50": 72,
+        "p95": 145,
+        "p99": 220,
+        "replicas": 2,
+        "cpu": 52.0,
+        "mem": 48.0,
+        "err": 0.03,
+        "last_deploy": "12h ago",
+        "port": 8005,
+        "namespace": "production",
+        "tags": ["inventory", "stock", "mongodb"],
+    },
 ]
 
 
 def get_services() -> ServiceListResponse:
-    svcs: List[Service] = []
+    svcs: list[Service] = []
     for b in _SERVICES_BASE:
         # simulate small live drift
         cpu = round(min(100, b["cpu"] + random.uniform(-3, 3)), 1)
         mem = round(min(100, b["mem"] + random.uniform(-2, 2)), 1)
         req = max(0, b["req_per_min"] + random.randint(-30, 30))
-        svcs.append(Service(
-            id=b["id"], name=b["name"],
-            description=b["description"],
-            stack=b["stack"], version=b["version"],
-            status=b["status"],
-            stats=ServiceStats(
-                req_per_min=req,
-                uptime_pct=b["uptime"],
-                p50_ms=b["p50"], p95_ms=b["p95"], p99_ms=b["p99"],
-                replicas=b["replicas"],
-                cpu_pct=cpu, mem_pct=mem,
-                error_rate_pct=b["err"],
-            ),
-            last_deploy=b["last_deploy"],
-            port=b["port"],
-            namespace=b["namespace"],
-            tags=b["tags"],
-        ))
+        svcs.append(
+            Service(
+                id=b["id"],
+                name=b["name"],
+                description=b["description"],
+                stack=b["stack"],
+                version=b["version"],
+                status=b["status"],
+                stats=ServiceStats(
+                    req_per_min=req,
+                    uptime_pct=b["uptime"],
+                    p50_ms=b["p50"],
+                    p95_ms=b["p95"],
+                    p99_ms=b["p99"],
+                    replicas=b["replicas"],
+                    cpu_pct=cpu,
+                    mem_pct=mem,
+                    error_rate_pct=b["err"],
+                ),
+                last_deploy=b["last_deploy"],
+                port=b["port"],
+                namespace=b["namespace"],
+                tags=b["tags"],
+            )
+        )
     up = sum(1 for s in svcs if s.status == ServiceStatus.UP)
     deg = sum(1 for s in svcs if s.status == ServiceStatus.DEGRADED)
     down = sum(1 for s in svcs if s.status == ServiceStatus.DOWN)
@@ -139,14 +239,19 @@ def get_service(service_id: str) -> Service | None:
 
 # ── PIPELINE DATA ─────────────────────────────────────────────────────────────
 
+
 def get_pipelines() -> PipelineListResponse:
     pipelines = [
         Pipeline(
-            id="pipe-001", service="api-gateway",
+            id="pipe-001",
+            service="api-gateway",
             branch="main ← feat/rate-limit",
-            commit_sha="d817832", commit_msg="Fix rate limiter config",
-            author="rintuchowdory", status=StageStatus.PASSED,
-            triggered_at="10 min ago", duration_sec=175,
+            commit_sha="d817832",
+            commit_msg="Fix rate limiter config",
+            author="rintuchowdory",
+            status=StageStatus.PASSED,
+            triggered_at="10 min ago",
+            duration_sec=175,
             stages=[
                 PipelineStage(name="Build", status=StageStatus.PASSED, duration_sec=72),
                 PipelineStage(name="Unit Tests", status=StageStatus.PASSED, duration_sec=43),
@@ -155,11 +260,15 @@ def get_pipelines() -> PipelineListResponse:
             ],
         ),
         Pipeline(
-            id="pipe-002", service="auth-service",
+            id="pipe-002",
+            service="auth-service",
             branch="main ← fix/token-expiry",
-            commit_sha="a1b2c3d", commit_msg="Fix JWT expiry edge case",
-            author="rintuchowdory", status=StageStatus.RUNNING,
-            triggered_at="2 min ago", duration_sec=None,
+            commit_sha="a1b2c3d",
+            commit_msg="Fix JWT expiry edge case",
+            author="rintuchowdory",
+            status=StageStatus.RUNNING,
+            triggered_at="2 min ago",
+            duration_sec=None,
             stages=[
                 PipelineStage(name="Build", status=StageStatus.PASSED, duration_sec=58),
                 PipelineStage(name="Unit Tests", status=StageStatus.PASSED, duration_sec=31),
@@ -168,11 +277,15 @@ def get_pipelines() -> PipelineListResponse:
             ],
         ),
         Pipeline(
-            id="pipe-003", service="payment-svc",
+            id="pipe-003",
+            service="payment-svc",
             branch="main ← hotfix/mem-leak",
-            commit_sha="f9e8d7c", commit_msg="Patch memory leak in Stripe handler",
-            author="rintuchowdory", status=StageStatus.FAILED,
-            triggered_at="45 min ago", duration_sec=124,
+            commit_sha="f9e8d7c",
+            commit_msg="Patch memory leak in Stripe handler",
+            author="rintuchowdory",
+            status=StageStatus.FAILED,
+            triggered_at="45 min ago",
+            duration_sec=124,
             stages=[
                 PipelineStage(name="Build", status=StageStatus.PASSED, duration_sec=64),
                 PipelineStage(name="Integration Tests", status=StageStatus.FAILED, duration_sec=60),
@@ -185,56 +298,94 @@ def get_pipelines() -> PipelineListResponse:
     passed = sum(1 for p in pipelines if p.status == StageStatus.PASSED)
     failed = sum(1 for p in pipelines if p.status == StageStatus.FAILED)
     return PipelineListResponse(
-        total=len(pipelines), running=running, passed=passed, failed=failed,
+        total=len(pipelines),
+        running=running,
+        passed=passed,
+        failed=failed,
         pipelines=pipelines,
     )
 
 
 # ── KUBERNETES DATA ───────────────────────────────────────────────────────────
 
-def _make_pods(healthy: int, warning: int = 0, dead: int = 0, prefix: str = "pod") -> List[Pod]:
+
+def _make_pods(healthy: int, warning: int = 0, dead: int = 0, prefix: str = "pod") -> list[Pod]:
     pods = []
     for i in range(healthy):
-        pods.append(Pod(name=f"{prefix}-{i+1}", status=PodStatus.HEALTHY,
-                        restarts=random.randint(0, 2), age="2d"))
+        pods.append(
+            Pod(
+                name=f"{prefix}-{i+1}",
+                status=PodStatus.HEALTHY,
+                restarts=random.randint(0, 2),
+                age="2d",
+            )
+        )
     for i in range(warning):
-        pods.append(Pod(name=f"{prefix}-w{i+1}", status=PodStatus.WARNING,
-                        restarts=random.randint(3, 8), age="1d"))
+        pods.append(
+            Pod(
+                name=f"{prefix}-w{i+1}",
+                status=PodStatus.WARNING,
+                restarts=random.randint(3, 8),
+                age="1d",
+            )
+        )
     for i in range(dead):
-        pods.append(Pod(name=f"{prefix}-d{i+1}", status=PodStatus.DEAD,
-                        restarts=random.randint(10, 30), age="6h"))
+        pods.append(
+            Pod(
+                name=f"{prefix}-d{i+1}",
+                status=PodStatus.DEAD,
+                restarts=random.randint(10, 30),
+                age="6h",
+            )
+        )
     return pods
 
 
 def get_kubernetes() -> K8sResponse:
     namespaces = [
         K8sNamespace(
-            id="ns-prod", namespace="production", cluster="prod-cluster",
+            id="ns-prod",
+            namespace="production",
+            cluster="prod-cluster",
             cpu_pct=round(64 + random.uniform(-4, 4), 1),
             mem_pct=round(71 + random.uniform(-3, 3), 1),
             pods=_make_pods(5, 1, 0, "prod"),
-            services_count=6, ingresses=2, pvcs=4,
+            services_count=6,
+            ingresses=2,
+            pvcs=4,
         ),
         K8sNamespace(
-            id="ns-staging", namespace="staging", cluster="staging-cluster",
+            id="ns-staging",
+            namespace="staging",
+            cluster="staging-cluster",
             cpu_pct=round(31 + random.uniform(-3, 3), 1),
             mem_pct=round(44 + random.uniform(-3, 3), 1),
             pods=_make_pods(4, 0, 0, "stage"),
-            services_count=6, ingresses=1, pvcs=2,
+            services_count=6,
+            ingresses=1,
+            pvcs=2,
         ),
         K8sNamespace(
-            id="ns-monitoring", namespace="monitoring", cluster="obs-stack",
+            id="ns-monitoring",
+            namespace="monitoring",
+            cluster="obs-stack",
             cpu_pct=round(22 + random.uniform(-2, 2), 1),
             mem_pct=round(58 + random.uniform(-3, 3), 1),
             pods=_make_pods(3, 0, 0, "obs"),
-            services_count=3, ingresses=1, pvcs=3,
+            services_count=3,
+            ingresses=1,
+            pvcs=3,
         ),
         K8sNamespace(
-            id="ns-portfolio", namespace="devops-portfolio", cluster="portfolio-ns",
+            id="ns-portfolio",
+            namespace="devops-portfolio",
+            cluster="portfolio-ns",
             cpu_pct=round(12 + random.uniform(-2, 2), 1),
             mem_pct=round(28 + random.uniform(-2, 2), 1),
             pods=_make_pods(2, 0, 0, "port"),
-            services_count=2, ingresses=1, pvcs=1,
+            services_count=2,
+            ingresses=1,
+            pvcs=1,
         ),
     ]
     all_pods = [p for ns in namespaces for p in ns.pods]
@@ -248,6 +399,7 @@ def get_kubernetes() -> K8sResponse:
 
 
 # ── METRICS DATA ──────────────────────────────────────────────────────────────
+
 
 def get_service_metrics(service_id: str) -> ServiceMetric | None:
     svc = get_service(service_id)
@@ -268,14 +420,16 @@ def get_dashboard_summary() -> DashboardSummary:
     pipe_data = get_pipelines()
     avg_lat = int(sum(s.stats.p50_ms for s in svc_data.services) / len(svc_data.services))
     total_req = sum(s.stats.req_per_min for s in svc_data.services)
-    avg_err = round(sum(s.stats.error_rate_pct for s in svc_data.services) / len(svc_data.services), 2)
+    avg_err = round(
+        sum(s.stats.error_rate_pct for s in svc_data.services) / len(svc_data.services), 2
+    )
     return DashboardSummary(
         services_up=svc_data.up,
         services_degraded=svc_data.degraded,
         services_down=svc_data.down,
         avg_response_ms=avg_lat,
-        deployments_today=7,
-        deployments_passed=pipe_data.passed + 4,
+        deployments_today=len(pipe_data.pipelines),
+        deployments_passed=pipe_data.passed,
         deployments_failed=pipe_data.failed,
         active_alerts=2,
         total_req_per_min=total_req,
@@ -287,21 +441,21 @@ def get_dashboard_summary() -> DashboardSummary:
 # ── LOG DATA ──────────────────────────────────────────────────────────────────
 
 _LOG_POOL = [
-    ("api-gateway",     LogLevel.INFO,  "GET /api/v1/products 200 38ms",             "prod-1"),
-    ("auth-service",    LogLevel.INFO,  "Token validated uid=u_9f2a3b",              "prod-2"),
-    ("payment-svc",     LogLevel.WARN,  "Memory usage 91% — GC pressure detected",   "prod-3"),
-    ("user-service",    LogLevel.INFO,  "POST /users/profile 201 55ms",              "prod-4"),
-    ("payment-svc",     LogLevel.ERROR, "Integration test failed: stripe mock timeout", "prod-3"),
-    ("api-gateway",     LogLevel.INFO,  "Rate limiter reset for 192.168.1.1",        "prod-1"),
-    ("notification-svc",LogLevel.INFO,  "Email dispatched to chowdoryrintu60@gmail.com", "prod-5"),
-    ("inventory-svc",   LogLevel.INFO,  "Stock sync complete — 2841 items",          "prod-6"),
-    ("payment-svc",     LogLevel.WARN,  "Retrying DB connection (attempt 2/3)",      "prod-3"),
-    ("auth-service",    LogLevel.INFO,  "Docker push initiated sha256:a1b2c3",       "prod-2"),
-    ("api-gateway",     LogLevel.INFO,  "GET /api/v1/orders 200 41ms",              "prod-1"),
-    ("inventory-svc",   LogLevel.INFO,  "GET /stock/sku-441 200 68ms",              "prod-6"),
-    ("user-service",    LogLevel.WARN,  "Slow query detected: 340ms",               "prod-4"),
-    ("auth-service",    LogLevel.ERROR, "Failed login attempt from 10.0.0.42",      "prod-2"),
-    ("api-gateway",     LogLevel.INFO,  "Health check passed for all upstreams",    "prod-1"),
+    ("api-gateway", LogLevel.INFO, "GET /api/v1/products 200 38ms", "prod-1"),
+    ("auth-service", LogLevel.INFO, "Token validated uid=u_9f2a3b", "prod-2"),
+    ("payment-svc", LogLevel.WARN, "Memory usage 91% — GC pressure detected", "prod-3"),
+    ("user-service", LogLevel.INFO, "POST /users/profile 201 55ms", "prod-4"),
+    ("payment-svc", LogLevel.ERROR, "Integration test failed: stripe mock timeout", "prod-3"),
+    ("api-gateway", LogLevel.INFO, "Rate limiter reset for 192.168.1.1", "prod-1"),
+    ("notification-svc", LogLevel.INFO, "Email dispatched to oncall@example.com", "prod-5"),
+    ("inventory-svc", LogLevel.INFO, "Stock sync complete — 2841 items", "prod-6"),
+    ("payment-svc", LogLevel.WARN, "Retrying DB connection (attempt 2/3)", "prod-3"),
+    ("auth-service", LogLevel.INFO, "Docker push initiated sha256:a1b2c3", "prod-2"),
+    ("api-gateway", LogLevel.INFO, "GET /api/v1/orders 200 41ms", "prod-1"),
+    ("inventory-svc", LogLevel.INFO, "GET /stock/sku-441 200 68ms", "prod-6"),
+    ("user-service", LogLevel.WARN, "Slow query detected: 340ms", "prod-4"),
+    ("auth-service", LogLevel.ERROR, "Failed login attempt from 10.0.0.42", "prod-2"),
+    ("api-gateway", LogLevel.INFO, "Health check passed for all upstreams", "prod-1"),
 ]
 
 
@@ -312,28 +466,27 @@ def get_logs(
 ) -> LogResponse:
     pool = _LOG_POOL * 3  # replicate for variety
     random.shuffle(pool)
-    entries: List[LogEntry] = []
-    for i, (svc, lvl, msg, pod) in enumerate(pool[:limit * 2]):
+    entries: list[LogEntry] = []
+    for i, (svc, lvl, msg, pod) in enumerate(pool[: limit * 2]):
         if service and svc != service:
             continue
         if level and lvl.value != level.upper():
             continue
-        entries.append(LogEntry(
-            id=f"log-{int(time.time())}-{i}",
-            timestamp=_now(),
-            service=svc,
-            level=lvl,
-            message=msg,
-            trace_id=f"trace-{random.randint(10000,99999)}",
-            pod=pod,
-        ))
+        entries.append(
+            LogEntry(
+                id=f"log-{int(time.time())}-{i}",
+                timestamp=_now(),
+                service=svc,
+                level=lvl,
+                message=msg,
+                trace_id=f"trace-{random.randint(10000,99999)}",
+                pod=pod,
+            )
+        )
         if len(entries) >= limit:
             break
     return LogResponse(total=len(entries), entries=entries)
 
-
-import uuid as _uuid
-_triggered: dict = {}
 
 def trigger_pipeline(pipeline_id: str):
     data = get_pipelines()
@@ -342,5 +495,9 @@ def trigger_pipeline(pipeline_id: str):
         return None
     trigger_id = f"pipe-{_uuid.uuid4().hex[:6]}"
     _triggered[trigger_id] = {"pipeline_id": pipeline_id, "triggered_at": _now()}
-    return {"pipeline_id": pipeline_id, "trigger_id": trigger_id,
-            "service": pipe.service, "triggered_at": _now()}
+    return {
+        "pipeline_id": pipeline_id,
+        "trigger_id": trigger_id,
+        "service": pipe.service,
+        "triggered_at": _now(),
+    }

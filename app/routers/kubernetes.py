@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
+
+from app.models.schemas import K8sNamespace, K8sResponse
 from app.services.store import get_kubernetes
-from app.models.schemas import K8sResponse, K8sNamespace
 
 router = APIRouter()
 

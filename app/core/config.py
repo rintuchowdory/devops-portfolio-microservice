@@ -1,10 +1,22 @@
-from pydantic_settings import BaseSettings
-from typing import List
+"""Application settings, loaded from environment variables or a .env file."""
+
+from __future__ import annotations
+
+import json
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     APP_NAME: str = "DevOps Mesh API"
-    VERSION: str = "1.0.0"
+    VERSION: str = "1.1.0"
     ENV: str = "development"
     DEBUG: bool = True
 
@@ -12,28 +24,35 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
-    # Security
-    SECRET_KEY: str = "dev-secret-change-in-production"
-    API_KEY_HEADER: str = "X-API-Key"
-
     # CORS
-    ALLOWED_ORIGINS: List[str] = [
+    ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
-        "http://localhost:4321",  # Astro dev
+        "http://localhost:4321",  # Astro dev server
         "http://localhost:8080",
-        "*",
+        "https://rintuchowdory.github.io",
     ]
 
-    # Metrics refresh interval (seconds)
+    # Metrics refresh interval (seconds) used by the dashboard summary payload
     METRICS_TTL: int = 5
 
-    # Log settings
+    # Logging
     LOG_LEVEL: str = "INFO"
     LOG_MAX_LINES: int = 500
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        """Accept JSON arrays as well as comma separated strings.
+
+        Render and Docker users usually set `ALLOWED_ORIGINS=https://a.dev,https://b.dev`,
+        which pydantic-settings would otherwise reject because it expects JSON.
+        """
+        if isinstance(value, str) and not value.strip().startswith("["):
+            parts = [item.strip() for item in value.split(",") if item.strip()]
+            return parts or ["*"]
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
 
 
 settings = Settings()

@@ -2,14 +2,16 @@
 Full test suite for DevOps Mesh API
 Run: pytest tests/ -v
 """
-import pytest
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
 
 
 # ── HEALTH ────────────────────────────────────────────────────────────────────
+
 
 def test_root():
     r = client.get("/")
@@ -30,6 +32,7 @@ def test_health_ready():
 
 
 # ── SERVICES ──────────────────────────────────────────────────────────────────
+
 
 def test_list_services():
     r = client.get("/api/v1/services")
@@ -77,6 +80,7 @@ def test_get_service_not_found():
 
 # ── PIPELINES ─────────────────────────────────────────────────────────────────
 
+
 def test_list_pipelines():
     r = client.get("/api/v1/pipelines")
     assert r.status_code == 200
@@ -106,6 +110,7 @@ def test_get_pipeline_not_found():
 
 # ── KUBERNETES ────────────────────────────────────────────────────────────────
 
+
 def test_kubernetes_overview():
     r = client.get("/api/v1/kubernetes")
     assert r.status_code == 200
@@ -126,6 +131,7 @@ def test_get_namespace_not_found():
 
 
 # ── METRICS ───────────────────────────────────────────────────────────────────
+
 
 def test_dashboard_summary():
     r = client.get("/api/v1/metrics/summary")
@@ -150,6 +156,7 @@ def test_service_metrics_not_found():
 
 
 # ── LOGS ──────────────────────────────────────────────────────────────────────
+
 
 def test_fetch_logs():
     r = client.get("/api/v1/logs")
@@ -185,6 +192,7 @@ def test_logs_limit_too_high():
 
 
 # ── RESPONSE HEADERS ──────────────────────────────────────────────────────────
+
 
 def test_response_time_header():
     r = client.get("/health")

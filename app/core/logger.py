@@ -1,5 +1,6 @@
 import logging
 import sys
+
 from app.core.config import settings
 
 
@@ -16,5 +17,6 @@ def _build_logger() -> logging.Logger:
     log.addHandler(handler)
     log.propagate = False
     return log
+
 
 logger = _build_logger()

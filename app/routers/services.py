@@ -1,16 +1,16 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
-from app.services.store import get_services, get_service
-from app.models.schemas import ServiceListResponse, Service, ServiceStatus
+
+from app.models.schemas import Service, ServiceListResponse, ServiceStatus
+from app.services.store import get_service, get_services
 
 router = APIRouter()
 
 
 @router.get("/services", response_model=ServiceListResponse, summary="List all services")
 async def list_services(
-    status: Optional[ServiceStatus] = Query(None, description="Filter by status"),
-    namespace: Optional[str] = Query(None, description="Filter by K8s namespace"),
-    tag: Optional[str] = Query(None, description="Filter by tag"),
+    status: ServiceStatus | None = Query(None, description="Filter by status"),
+    namespace: str | None = Query(None, description="Filter by K8s namespace"),
+    tag: str | None = Query(None, description="Filter by tag"),
 ):
     data = get_services()
     svcs = data.services

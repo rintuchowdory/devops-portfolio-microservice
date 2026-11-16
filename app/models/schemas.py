@@ -1,8 +1,8 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field
-from typing import List, Optional
+
 from enum import Enum
-from datetime import datetime
+
+from pydantic import BaseModel
 
 
 class ServiceStatus(str, Enum):
@@ -55,7 +55,7 @@ class Service(BaseModel):
     last_deploy: str
     port: int
     namespace: str
-    tags: List[str] = []
+    tags: list[str] = []
 
 
 class ServiceListResponse(BaseModel):
@@ -63,14 +63,14 @@ class ServiceListResponse(BaseModel):
     up: int
     degraded: int
     down: int
-    services: List[Service]
+    services: list[Service]
 
 
 class PipelineStage(BaseModel):
     name: str
     status: StageStatus
-    duration_sec: Optional[int] = None
-    started_at: Optional[str] = None
+    duration_sec: int | None = None
+    started_at: str | None = None
 
 
 class Pipeline(BaseModel):
@@ -82,8 +82,8 @@ class Pipeline(BaseModel):
     author: str
     status: StageStatus
     triggered_at: str
-    duration_sec: Optional[int]
-    stages: List[PipelineStage]
+    duration_sec: int | None
+    stages: list[PipelineStage]
 
 
 class PipelineListResponse(BaseModel):
@@ -91,7 +91,7 @@ class PipelineListResponse(BaseModel):
     running: int
     passed: int
     failed: int
-    pipelines: List[Pipeline]
+    pipelines: list[Pipeline]
 
 
 class Pod(BaseModel):
@@ -107,7 +107,7 @@ class K8sNamespace(BaseModel):
     cluster: str
     cpu_pct: float
     mem_pct: float
-    pods: List[Pod]
+    pods: list[Pod]
     services_count: int
     ingresses: int
     pvcs: int
@@ -117,7 +117,7 @@ class K8sResponse(BaseModel):
     total_namespaces: int
     total_pods: int
     healthy_pods: int
-    namespaces: List[K8sNamespace]
+    namespaces: list[K8sNamespace]
 
 
 class TimeSeriesPoint(BaseModel):
@@ -127,11 +127,11 @@ class TimeSeriesPoint(BaseModel):
 
 class ServiceMetric(BaseModel):
     service_id: str
-    req_per_min: List[TimeSeriesPoint]
-    latency_p50: List[TimeSeriesPoint]
-    error_rate: List[TimeSeriesPoint]
-    cpu: List[TimeSeriesPoint]
-    mem: List[TimeSeriesPoint]
+    req_per_min: list[TimeSeriesPoint]
+    latency_p50: list[TimeSeriesPoint]
+    error_rate: list[TimeSeriesPoint]
+    cpu: list[TimeSeriesPoint]
+    mem: list[TimeSeriesPoint]
 
 
 class DashboardSummary(BaseModel):
@@ -154,13 +154,13 @@ class LogEntry(BaseModel):
     service: str
     level: LogLevel
     message: str
-    trace_id: Optional[str] = None
-    pod: Optional[str] = None
+    trace_id: str | None = None
+    pod: str | None = None
 
 
 class LogResponse(BaseModel):
     total: int
-    entries: List[LogEntry]
+    entries: list[LogEntry]
 
 
 class TriggerResponse(BaseModel):
